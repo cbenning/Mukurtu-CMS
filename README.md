@@ -18,6 +18,16 @@ To learn more about Mukurtu CMS and the larger Mukurtu community, visit [mukurtu
 * For local development, we encourage using [Docker](https://ddev.readthedocs.io/en/stable/users/install/docker-installation/) and [DDEV](https://ddev.readthedocs.io/en/stable/users/install/ddev-installation/) (which includes composer)
 * If planning to develop on the Mukurtu CMS installation profile, follow the [additional installation steps to connect a Git checkout to the new project](https://github.com/MukurtuCMS/Mukurtu-CMS/wiki).
 
+## Running Mukurtu in a container
+
+A ready-to-run container image is published to the GitHub Container Registry when
+a release is published. It installs itself into an empty database on first start
+and is configured entirely through environment variables. See
+[docs/docker.md](docs/docker.md) to run it (including every setting) and
+[examples/docker](examples/docker) for ready-to-run Compose examples (try it in two
+minutes, one site, or several sites on one host), and [docs/docker-build.md](docs/docker-build.md)
+for how the image is built, hardened, and tested.
+
 ## Installing Mukurtu CMS with Composer
 
 If installing directly on a web host that has a command line interface, you can install Mukurtu via composer.
@@ -43,6 +53,8 @@ composer create-project mukurtu/mukurtu-template:^4.0 .
 ```
 * Set your web server to serve the "web" folder (e.g. `mukurtu4/web`)
 * Install Drupal as normal by opening the site in your web browser, the Mukurtu profile distribution will automatically be used.
+
+**Expected warning during install:** When you install with Drush, the output shows `The "block_content:00000000-0000-0000-0000-000000000000" block plugin was not found` up to four times. This is expected and you can ignore it. The landing page's welcome block is created at the end of the install, and the warning stops once it exists.
 
 ## Post-installation Steps
 

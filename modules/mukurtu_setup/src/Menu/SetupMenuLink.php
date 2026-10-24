@@ -40,13 +40,15 @@ class SetupMenuLink extends MenuLinkDefault {
   }
 
   public function getCacheTags(): array {
-    return array_merge(parent::getCacheTags(), [
-      'community_list',
-      'protocol_list',
-      'taxonomy_term_list',
-      'block_content_list',
-      'mukurtu_setup:tasks',
-    ]);
+    return array_merge(parent::getCacheTags(), SiteSetupTaskManager::CACHE_TAGS);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getCacheContexts(): array {
+    // Some tasks are shown to specific roles only, so the counts vary by role.
+    return array_merge(parent::getCacheContexts(), ['user.roles']);
   }
 
 }

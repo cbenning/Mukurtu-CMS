@@ -4,6 +4,7 @@ namespace Drupal\mukurtu_core\Routing;
 
 use Drupal\Core\Routing\RouteSubscriberBase;
 use Drupal\Core\Routing\RoutingEvents;
+use Drupal\mukurtu_core\Controller\MukurtuManageContentController;
 use Drupal\mukurtu_core\Controller\VisitorsLocationReportController;
 use Symfony\Component\Routing\RouteCollection;
 
@@ -66,6 +67,14 @@ class RouteSubscriber extends RouteSubscriberBase
     if ($route = $collection->get(VisitorsLocationReportController::ROUTE_NAME)) {
       $route->setDefault('_controller', VisitorsLocationReportController::class . '::location');
     }
+    // The same map, scoped, on the country and region drill-downs. Each is
+    // only altered when it exists, so the region one (from visitors_geoip)
+    // never names a missing controller either.
+    foreach (VisitorsLocationReportController::DRILL_DOWN_ROUTES as $route_name => $method) {
+      if ($route = $collection->get($route_name)) {
+        $route->setDefault('_controller', VisitorsLocationReportController::class . '::' . $method);
+      }
+    }
 
     // Restrict the Message Subscribe UI "Subscriptions" page/tab to admins,
     // and render it in the admin theme like the rest of Mukurtu's admin
@@ -82,6 +91,16 @@ class RouteSubscriber extends RouteSubscriberBase
         $route->setRequirements($requirements);
         $route->setOption('_admin_route', TRUE);
       }
+    }
+
+    // Serve Mukurtu's content type picker at core's /node/add, the one URL
+    // Mukurtu uses for adding content (#2399). Drop the entity title callback
+    // ("Add content item") so the route's own "Add content" title applies.
+    if ($route = $collection->get('node.add_page')) {
+      $route->setDefault('_controller', MukurtuManageContentController::class . '::addPage');
+      $defaults = $route->getDefaults();
+      unset($defaults['_title_callback']);
+      $route->setDefaults($defaults);
     }
   }
 }
