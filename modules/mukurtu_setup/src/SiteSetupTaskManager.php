@@ -7,7 +7,9 @@ namespace Drupal\mukurtu_setup;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Render\Markup;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
@@ -22,6 +24,15 @@ class SiteSetupTaskManager {
   const STATE_DISMISSED = 'mukurtu_setup.dismissed_tasks';
   const STATE_COMPLETED = 'mukurtu_setup.completed_tasks';
 
+  /**
+   * Set by mukurtu_migrate when a Mukurtu CMS 3 migration finishes cleanly.
+   *
+   * @see \Drupal\mukurtu_migrate\Batch\MukurtuMigrateImportBatch::finished()
+   */
+  const STATE_MIGRATION_SUCCEEDED = 'mukurtu_migrate.migration_succeeded';
+
+  const TASK_MIGRATE = 'migrate_v3';
+
   const GROUP_REQUIRED = 'required';
   const GROUP_RECOMMENDED = 'recommended';
   const GROUP_SITE_OPERATIONS = 'site_operations';
@@ -31,19 +42,62 @@ class SiteSetupTaskManager {
    */
   const CRON_MAX_AGE = 86400;
 
+  /**
+   * Cache tags for anything rendered from the task list or its counts.
+   *
+   * config:core.extension covers tasks that depend on an optional module
+   * (cookie_consent needs Klaro). Uninstalling a module flushes every cache,
+   * but installing one only invalidates this tag.
+   */
+  const CACHE_TAGS = [
+    'config:system.site',
+    'config:core.extension',
+    'community_list',
+    'protocol_list',
+    'taxonomy_term_list',
+    'block_content_list',
+    'mukurtu_setup:tasks',
+  ];
+
   public function __construct(
     protected EntityTypeManagerInterface $entityTypeManager,
     protected ConfigFactoryInterface $configFactory,
     protected StateInterface $state,
+    protected ModuleHandlerInterface $moduleHandler,
+    protected AccountInterface $currentUser,
   ) {}
 
   /**
-   * Returns all defined setup tasks.
+   * Returns the setup tasks the current user can see.
    *
    * @return SiteSetupTask[]
    */
   public function getTasks(): array {
-    return [
+    $roles = $this->currentUser->getRoles();
+    return array_values(array_filter(
+      $this->getAllTasks(),
+      fn(SiteSetupTask $task) => $task->getRoles() === NULL || array_intersect($task->getRoles(), $roles),
+    ));
+  }
+
+  /**
+   * Returns all defined setup tasks, regardless of role.
+   *
+   * @return SiteSetupTask[]
+   */
+  protected function getAllTasks(): array {
+    $tasks = [
+      new SiteSetupTask(
+        self::TASK_MIGRATE,
+        (string) $this->t('Migrate from Mukurtu CMS 3'),
+        Markup::create((string) $this->t('Bring over content from a Mukurtu CMS 3 site. Run this before adding any content. If you aren\'t migrating, dismiss this task. Learn more at <a href="https://docs.mukurtu.org/migration/00MigrationOverview/">Migration Overview</a>.')),
+        self::GROUP_REQUIRED,
+        TRUE,
+        '/admin/migrate',
+        (string) $this->t('Start migration'),
+        dismissible: TRUE,
+        roles: ['administrator'],
+      ),
       new SiteSetupTask(
         'create_mukurtu_manager',
         (string) $this->t('Create a Mukurtu Manager account'),
@@ -190,6 +244,14 @@ class SiteSetupTaskManager {
         (string) $this->t('Open bot protection settings'),
       ),
     ];
+
+    // Klaro is installed by default but sites may uninstall it, and the
+    // cookie consent task links to its settings page.
+    if (!$this->moduleHandler->moduleExists('klaro')) {
+      $tasks = array_values(array_filter($tasks, fn (SiteSetupTask $task) => $task->getId() !== 'cookie_consent'));
+    }
+
+    return $tasks;
   }
 
   /**
@@ -218,6 +280,7 @@ class SiteSetupTaskManager {
     }
     try {
       return match ($taskId) {
+        self::TASK_MIGRATE => (bool) $this->state->get(self::STATE_MIGRATION_SUCCEEDED, FALSE),
         'create_community' => $this->entityExists('community'),
         'create_category' => $this->taxonomyTermExists('category'),
         'dictionary_language' => $this->taxonomyTermExists('language'),
