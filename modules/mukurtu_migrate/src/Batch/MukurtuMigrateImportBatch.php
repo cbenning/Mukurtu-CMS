@@ -2,6 +2,7 @@
 
 namespace Drupal\mukurtu_migrate\Batch;
 
+use Drupal\Core\Cache\Cache;
 use Drupal\Core\StringTranslation\PluralTranslatableMarkup;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\migrate_drupal_ui\Batch\MigrateMessageCapture;
@@ -272,6 +273,10 @@ class MukurtuMigrateImportBatch extends MigrateUpgradeImportBatch {
     $row_failures = $results['row_failures'] ?? 0;
     $row_ignored = $results['row_ignored'] ?? 0;
 
+    // The source database credentials are only needed while the batch runs,
+    // and the credential step saves them again before every run.
+    static::deleteSourceCredentials();
+
     if ($successes > 0) {
       \Drupal::messenger()->addStatus(\Drupal::translation()
         ->formatPlural($successes, 'Completed 1 migration task successfully', 'Completed @count migration tasks successfully'));
@@ -304,6 +309,15 @@ class MukurtuMigrateImportBatch extends MigrateUpgradeImportBatch {
     $store = \Drupal::service('tempstore.private')->get('mukurtu_migrate');
     $create_landing_page = $store->get('create_landing_page');
     if ($success && $failures == 0 && $row_failures == 0) {
+      // Record that this site has been migrated. mukurtu_setup reads this
+      // key to complete its "Migrate from Mukurtu CMS 3" task and hide the
+      // dashboard's Migration panel. A run that brought nothing over does
+      // not count.
+      if ($row_created_or_updated > 0) {
+        \Drupal::state()->set('mukurtu_migrate.migration_succeeded', TRUE);
+        Cache::invalidateTags(['mukurtu_setup:tasks']);
+      }
+
       if ($create_landing_page) {
         try {
           $landing_page_service = \Drupal::service('mukurtu_landing_page.default_landing_page');
@@ -331,6 +345,25 @@ class MukurtuMigrateImportBatch extends MigrateUpgradeImportBatch {
           ->addStatus(t('The front page was set to the Drupal default of "/node". You will likely want to update this by navigating to <a href="/admin/config/system/site-information">Configuration > System > Basic Site Settings</a>.'));
       }
     }
+  }
+
+  /**
+   * Deletes the saved source database credentials from state.
+   *
+   * The credential form saves them, including the password, through
+   * MigrationConfigurationTrait::createDatabaseStateSettings().
+   *
+   * @return bool
+   *   TRUE if saved credentials were found and deleted.
+   */
+  public static function deleteSourceCredentials(): bool {
+    $state = \Drupal::state();
+    $database_state_key = $state->get('migrate.fallback_state_key');
+    if ($database_state_key === NULL) {
+      return FALSE;
+    }
+    $state->deleteMultiple([$database_state_key, 'migrate.fallback_state_key']);
+    return TRUE;
   }
 
 }

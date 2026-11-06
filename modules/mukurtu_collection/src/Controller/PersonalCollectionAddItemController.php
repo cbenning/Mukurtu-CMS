@@ -21,7 +21,9 @@ class PersonalCollectionAddItemController extends ControllerBase {
    *   The access result.
    */
   public function access(AccountInterface $account, NodeInterface $node) {
-    return AccessResult::allowedIfHasPermission($account, 'add personal collection entities');
+    // The page shows the item's title, so the account must be able to see it.
+    return AccessResult::allowedIfHasPermission($account, 'add personal collection entities')
+      ->andIf($node->access('view', $account, TRUE));
   }
 
   /**
@@ -59,7 +61,7 @@ class PersonalCollectionAddItemController extends ControllerBase {
 
     // New Personal Collection.
     $newCollection = PersonalCollection::create([
-      'uid' => $this->currentUser()->id(),
+      'user_id' => $this->currentUser()->id(),
     ]);
     $newCollection->add($node);
 

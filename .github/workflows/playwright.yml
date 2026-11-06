@@ -196,7 +196,9 @@ jobs:
   playwright-tests:
     needs: wait-for-tugboat
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    # Pinned: Playwright's Chromium doesn't support ubuntu-latest (26.04) yet.
+    # See #2513.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
@@ -255,11 +257,14 @@ jobs:
             tests/playwright/test-results/a11y/
             tests/playwright/test-results/a11y-extra/
             tests/playwright/test-results/report.json
+            tests/playwright/test-results/default-content-*/error-context.md
           if-no-files-found: warn
           retention-days: 30
 
   playwright-tests-main:
-    runs-on: ubuntu-latest
+    # Pinned: Playwright's Chromium doesn't support ubuntu-latest (26.04) yet.
+    # See #2513.
+    runs-on: ubuntu-24.04
     if: github.event_name == 'push'
     steps:
       - name: Checkout Repository
@@ -386,5 +391,6 @@ jobs:
             tests/playwright/test-results/a11y/
             tests/playwright/test-results/a11y-extra/
             tests/playwright/test-results/report.json
+            tests/playwright/test-results/default-content-*/error-context.md
           if-no-files-found: warn
           retention-days: 30

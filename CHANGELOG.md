@@ -5,6 +5,123 @@ a tagged release; see the
 [releases page](https://github.com/MukurtuCMS/Mukurtu-CMS/releases) for the tags
 themselves.
 
+## 4.0.8
+
+A security and maintenance release. It fixes two security issues, and fixes
+new installs that failed after migrate_source_csv 3.10 was released.
+
+Security fixes:
+
+- Map popups now show location descriptions as plain text. Before this
+  release, HTML in a location description ran in the browser of anyone who
+  opened the popup.
+- Cached lists of media, communities, and protocols no longer show one user's
+  results to another user who has the same roles.
+
+This release also updates symfony/mime to 7.4.22 for CVE-2026-45070.
+
+New in this release: logged-in users can search for addresses on map fields,
+browse facet headers show plus and minus collapse indicators, and record and
+page titles appear as headings instead of in the digital heritage sidebar. The
+consent popup is now a dialog that fits narrow screens, and screen readers
+announce multipage page changes.
+
+This release also fixes several bugs. Image media imports work again,
+collection creators can open an empty Collections page, and related content
+shows on dictionary words that have several media items. The Media type filter
+lists SoundCloud and remote video under Audio and Video.
+
+To update, back up your site, run `composer update`, and then run database
+updates (`drush updb`). If `composer update` stops with "No available patcher
+was able to apply patch" for migrate_source_csv, run `composer patches-relock`
+and try again. This release includes 6 database updates. They:
+
+- Turn off the CAPTCHA setting "Add CAPTCHA challenges on all forms." CAPTCHA
+  still protects the login, registration, and password reset forms. If you use
+  configuration sync, export your configuration after updating, or a later
+  import turns the setting back on.
+- Let logged-in users search for addresses on map fields.
+- Remove the title from the digital heritage sidebar, since it repeats the page
+  title.
+- Remove the saved Mukurtu 3 database credentials.
+- Reindex search so SoundCloud and remote video count as Audio and Video.
+- Re-save all views so cached lists of media, communities, and protocols vary
+  by membership.
+
+## 4.0.7
+
+A security and maintenance release. It requires CAPTCHA 2.0.11 or later, which
+fixes the security issue SA-CONTRIB-2026-281, and fixes the database update
+failure some multilingual sites hit when updating to 4.0.6. It also fixes
+several bugs and accessibility issues, and raises the minimum versions of Drupal
+core (11.4.10), Gin (5.0.16), and Leaflet (10.4.13) to the security-fixed
+releases that 4.0.6 recommended.
+
+If `drush updb` stopped at `mukurtu_core_update_40214` on 4.0.6, update to 4.0.7
+and run database updates again. If you skipped that update instead, run it
+with:
+
+```
+drush php:eval '\Drupal::moduleHandler()->loadInclude("mukurtu_core", "install"); mukurtu_core_update_40214();'
+```
+
+New in this release: arrow buttons to reorder Entity Browser items without
+dragging, an explanation when a protocol or community can't be deleted, and an
+option for admins to dismiss the dashboard migration panel. Community managers
+can now delete communities, and comments show the author's display name.
+
+To update, back up your site, run `composer update`, and then run database
+updates (`drush updb`). This release includes 8 database updates. They:
+
+- Point the add content links at Drupal's standard /node/add pages.
+- Remove unused settings that fail configuration schema checks.
+- Remove two unused notification fields that an earlier update left partly
+  deleted. The status report lists them as needing to be uninstalled. Run cron
+  (`drush cron`) afterward to remove their database tables.
+- Set communities with an invalid page visibility to Community only, so they
+  are no longer hidden.
+- Map Mukurtu 3 community visibility to valid values, and give Mukurtu 3
+  language stewards the Community Manager role in their language communities.
+- Delete memberships left behind by deleted communities and protocols.
+- Mark the Mukurtu 3 migration setup task done on sites that no longer need it.
+
+## 4.0.6
+
+A security and feature release. Update as soon as you can, and make sure the
+update includes Drupal core 11.4.10 or later, which fixes the critical remote
+code execution issue SA-CORE-2026-014. Run a full `composer update`: updating
+only `mukurtu/mukurtu` does not update Drupal core. The release also updates
+Gin to 5.0.16 (SA-CONTRIB-2026-219) and Leaflet to 10.4.13
+(SA-CONTRIB-2026-204).
+
+New in this release: caption and subtitle tracks for uploaded video, home page
+and header background images, a carousel option for Featured Content blocks,
+optional roles on Creator, Contributor and People fields, translation status
+pages, right-to-left languages, and visitors by city on the visitor map. Search
+now finds words in more writing systems. Notification emails are now opt-in for
+new accounts, and the Masquerade module is included by default. The release
+also includes many accessibility fixes.
+
+To update, back up your site, run `composer update`, and then run database
+updates (`drush updb`). This release includes 34 database updates. Most add
+settings or fields. These ones affect how the update runs:
+
+- Search tables are converted to utf8mb4 so they can store characters such as
+  emoji and Osage letters. On a site with a large search index, this step can
+  take a while.
+- All search indexes are queued for reindexing. Search and browse results are
+  incomplete until reindexing finishes, so run cron (`drush cron`) until it
+  does.
+- Browse and search pages that showed every translation of an item now show one
+  item per language.
+- The Masquerade module is installed.
+- New accounts default to "Do not send emails" for notifications. Existing
+  accounts keep their setting.
+- Migrated group memberships whose edit forms failed to load are repaired.
+
+After the update, cron starts filling in locations for past visits on the
+Visitors pages. This runs in the background over several cron runs.
+
 ## 4.0.5
 
 A maintenance release with bug fixes, accessibility improvements, and fixes to

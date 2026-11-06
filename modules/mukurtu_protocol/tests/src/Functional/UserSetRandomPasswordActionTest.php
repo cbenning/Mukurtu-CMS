@@ -22,13 +22,6 @@ class UserSetRandomPasswordActionTest extends BrowserTestBase {
   protected bool $usesSuperUserAccessPolicy = FALSE;
 
   /**
-   * Bypass pre-existing flat_taxonomy schema validation in the mukurtu profile.
-   *
-   * {@inheritdoc}
-   */
-  protected $strictConfigSchema = FALSE;
-
-  /**
    * {@inheritdoc}
    */
   protected static $modules = [];
@@ -71,7 +64,7 @@ class UserSetRandomPasswordActionTest extends BrowserTestBase {
       'action' => 'genpass_set_random_password',
     ];
     $this->drupalGet('admin/people');
-    $this->submitForm($edit, 'Apply to selected items');
+    $this->submitForm($edit, 'Apply to selected users');
 
     $mails = \Drupal::state()->get('system.test_mail_collector', []);
     $this->assertNotEmpty($mails, 'A password reset email was sent.');
@@ -89,7 +82,7 @@ class UserSetRandomPasswordActionTest extends BrowserTestBase {
       'action' => 'genpass_set_random_password',
     ];
     $this->drupalGet('admin/people');
-    $this->submitForm($edit, 'Apply to selected items');
+    $this->submitForm($edit, 'Apply to selected users');
 
     $this->assertSession()->pageTextMatchesCount(1, '/password (reset email has been sent|for .+ has been reset)/i');
   }
@@ -105,7 +98,7 @@ class UserSetRandomPasswordActionTest extends BrowserTestBase {
       'action' => 'genpass_set_random_password',
     ];
     $this->drupalGet('admin/people');
-    $this->submitForm($edit, 'Apply to selected items');
+    $this->submitForm($edit, 'Apply to selected users');
 
     // genpass original shows "Password for X is: <plaintext>"; our override
     // must never display the raw generated password.

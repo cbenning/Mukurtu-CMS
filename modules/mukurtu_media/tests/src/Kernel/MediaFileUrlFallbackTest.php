@@ -65,16 +65,6 @@ class MediaFileUrlFallbackTest extends KernelTestBase {
   ];
 
   /**
-   * {@inheritdoc}
-   *
-   * mukurtu_media.schema.yml declares mukurtu_thumbnail.settings' keys under a
-   * nested 'default_thumbnail' sequence while ThumbnailSettingsForm reads and
-   * writes flat per-bundle keys. Pre-existing mismatch, same escape hatch as
-   * ThumbnailSettingsFormPreviewTest.
-   */
-  protected $strictConfigSchema = FALSE;
-
-  /**
    * Collects log records written during a test.
    */
   protected object $logger;
@@ -267,7 +257,7 @@ class MediaFileUrlFallbackTest extends KernelTestBase {
    */
   public function testAudioThumbnailFallsThroughToConfiguredDefault(): void {
     $default = $this->createFile('public://site-default.png');
-    \Drupal::configFactory()->getEditable('mukurtu_thumbnail.settings')
+    \Drupal::configFactory()->getEditable('mukurtu_media.thumbnail_settings')
       ->set('audio', [$default->id()])
       ->save();
 
@@ -283,7 +273,7 @@ class MediaFileUrlFallbackTest extends KernelTestBase {
    * With every tier unreachable, the bundled icon is used.
    */
   public function testAudioThumbnailFallsThroughToBundledIcon(): void {
-    \Drupal::configFactory()->getEditable('mukurtu_thumbnail.settings')
+    \Drupal::configFactory()->getEditable('mukurtu_media.thumbnail_settings')
       ->set('audio', [$this->createFile('private://site-default.png')->id()])
       ->save();
 

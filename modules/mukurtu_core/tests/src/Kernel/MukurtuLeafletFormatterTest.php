@@ -31,15 +31,6 @@ use PHPUnit\Framework\Attributes\Group;
 class MukurtuLeafletFormatterTest extends KernelTestBase {
 
   /**
-   * Contrib leaflet's formatter settings schema (leaflet_popup.value,
-   * geocoder.settings.set_marker, etc.) is incomplete - unrelated to the
-   * behavior under test here.
-   *
-   * {@inheritdoc}
-   */
-  protected $strictConfigSchema = FALSE;
-
-  /**
    * {@inheritdoc}
    */
   protected static $modules = [
@@ -196,6 +187,59 @@ class MukurtuLeafletFormatterTest extends KernelTestBase {
       $this->assertSame($description, $map_features[$i]['popup']['value']);
       $this->assertNotEmpty($map_features[$i]['title'], 'Each marker needs an accessible name.');
     }
+  }
+
+  /**
+   * Location descriptions must reach the popup escaped, never as markup.
+   *
+   * Leaflet passes popup content to bindPopup(), which inserts it as HTML.
+   * The description is plain text from the widget, so any markup in it has
+   * to arrive as text, or whoever can edit a location can run script in the
+   * browser of everyone who opens that popup.
+   */
+  public function testLocationDescriptionIsEscapedInPopup(): void {
+    $feature_collection = json_encode([
+      'type' => 'FeatureCollection',
+      'features' => [
+        [
+          'type' => 'Feature',
+          'properties' => ['location_description' => '<img src=x onerror="alert(1)">'],
+          'geometry' => ['type' => 'Point', 'coordinates' => [-117.16, 46.73]],
+        ],
+        [
+          'type' => 'Feature',
+          'properties' => ['location_description' => 'Fish & game camp'],
+          'geometry' => ['type' => 'Point', 'coordinates' => [-122.33, 47.60]],
+        ],
+      ],
+    ]);
+
+    $entity = EntityTest::create([
+      'name' => 'Escaping test',
+      'field_coverage' => ['value' => $feature_collection],
+    ]);
+    $entity->save();
+
+    $build = \Drupal::entityTypeManager()->getViewBuilder('entity_test')->view($entity, 'default');
+    \Drupal::service('renderer')->renderRoot($build);
+
+    $popups = [];
+    foreach ($build['field_coverage'] as $key => $item) {
+      if (!is_int($key)) {
+        continue;
+      }
+      foreach ($item['#attached']['drupalSettings']['leaflet'] as $map) {
+        foreach ($map['features'] as $feature) {
+          $popups[] = $feature['popup']['value'] ?? NULL;
+        }
+      }
+    }
+
+    $this->assertSame(
+      ['&lt;img src=x onerror=&quot;alert(1)&quot;&gt;', 'Fish &amp; game camp'],
+      $popups,
+      'Each description must be in its own popup, HTML-escaped.',
+    );
   }
 
 }

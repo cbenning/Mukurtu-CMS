@@ -137,6 +137,68 @@ class BrowseByCommunityViewAccessTest extends ProtocolAwareEntityTestBase {
   }
 
   /**
+   * Creates a community with an invalid access mode as another user.
+   *
+   * Older Mukurtu 3 migrations wrote "open", and the access handler treats
+   * any value other than "public" as community-only. The creator becomes a
+   * member, so it's created as someone other than the viewer.
+   */
+  protected function createInvalidCommunity(): CommunityInterface {
+    $this->setCurrentUser($this->createUser());
+    $community = $this->createCommunity('Invalid Community', TRUE, 'open');
+    $this->setCurrentUser($this->viewer);
+    return $community;
+  }
+
+  /**
+   * A non-member doesn't see a community with an invalid access mode.
+   */
+  public function testNonMemberDoesNotSeeInvalidAccessMode(): void {
+    $this->createInvalidCommunity();
+
+    $this->assertSame([(int) $this->publicCommunity->id()], $this->listedIds());
+  }
+
+  /**
+   * A member sees a community with an invalid access mode.
+   */
+  public function testMemberSeesInvalidAccessMode(): void {
+    $invalid = $this->createInvalidCommunity();
+    $invalid->addMember($this->viewer);
+
+    $expected = [(int) $this->publicCommunity->id(), (int) $invalid->id()];
+    sort($expected);
+    $this->assertSame($expected, $this->listedIds());
+  }
+
+  /**
+   * A member's cached list isn't shown to a non-member with the same roles.
+   */
+  public function testMemberListNotCachedForNonMember(): void {
+    $this->privateCommunity->addMember($this->viewer);
+    $expected = [(int) $this->publicCommunity->id(), (int) $this->privateCommunity->id()];
+    sort($expected);
+    $this->assertSame($expected, $this->listedIds());
+
+    $this->setCurrentUser($this->createUser());
+    $this->assertSame([(int) $this->publicCommunity->id()], $this->listedIds());
+  }
+
+  /**
+   * A non-member's cached list isn't shown to a member with the same roles.
+   */
+  public function testNonMemberListNotCachedForMember(): void {
+    $this->assertSame([(int) $this->publicCommunity->id()], $this->listedIds());
+
+    $member = $this->createUser();
+    $this->privateCommunity->addMember($member);
+    $this->setCurrentUser($member);
+    $expected = [(int) $this->publicCommunity->id(), (int) $this->privateCommunity->id()];
+    sort($expected);
+    $this->assertSame($expected, $this->listedIds());
+  }
+
+  /**
    * A blocked membership does not grant visibility.
    */
   public function testBlockedMemberSeesOnlyPublic(): void {

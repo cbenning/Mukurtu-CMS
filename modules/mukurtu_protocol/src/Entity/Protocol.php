@@ -71,6 +71,10 @@ use Exception;
     'collection' => '/admin/communities-protocols',
   ],
   admin_permission: 'administer protocol entities',
+  // Listings are filtered by the user's memberships in
+  // mukurtu_protocol_query_protocol_access_alter(), so cached lists must
+  // vary by them. See MembershipsCacheContext.
+  list_cache_contexts: ['mukurtu_memberships'],
   base_table: 'protocol',
   data_table: 'protocol_field_data',
   revision_table: 'protocol_revision',
@@ -279,12 +283,42 @@ class Protocol extends EditorialContentEntityBase implements ProtocolInterface, 
    * {@inheritdoc}
    */
   public function inUse(): bool {
+    // Only check that one item exists, since this runs on every delete
+    // access check.
+    foreach ($this->getReferencingEntityQueries() as $query) {
+      if (!empty($query->range(0, 1)->execute())) {
+        return TRUE;
+      }
+    }
+    return FALSE;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getReferencingEntityIds(): array {
+    $referencing = [];
+    foreach ($this->getReferencingEntityQueries() as $entity_type_id => $query) {
+      $referencing[$entity_type_id] = array_values($query->execute());
+    }
+    return $referencing;
+  }
+
+  /**
+   * Builds queries for the content and media that use this protocol.
+   *
+   * @return \Drupal\Core\Entity\Query\QueryInterface[]
+   *   Entity queries keyed by entity type ID.
+   */
+  protected function getReferencingEntityQueries(): array {
     $entityFieldManager = \Drupal::service('entity_field.manager');
+    $queries = [];
 
     foreach (['node', 'media'] as $entity_type_id) {
       try {
         $storage = $this->entityTypeManager()->getStorage($entity_type_id);
-      } catch (Exception $e) {
+      }
+      catch (Exception $e) {
         continue;
       }
 
@@ -296,17 +330,13 @@ class Protocol extends EditorialContentEntityBase implements ProtocolInterface, 
         continue;
       }
 
-      // Check if any entity has a reference to this protocol.
-      $query = $storage->getQuery();
-      $query->condition('field_cultural_protocols.protocols', "|{$this->id()}|", 'CONTAINS')
-        ->accessCheck(FALSE);
-      $results = $query->execute();
-      if (!empty($results)) {
-        return TRUE;
-      }
+      $queries[$entity_type_id] = $storage->getQuery()
+        ->condition('field_cultural_protocols.protocols', "|{$this->id()}|", 'CONTAINS')
+        ->accessCheck(FALSE)
+        ->sort($storage->getEntityType()->getKey('id'));
     }
 
-    return FALSE;
+    return $queries;
   }
 
   /**

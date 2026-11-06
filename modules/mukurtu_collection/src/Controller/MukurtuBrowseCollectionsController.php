@@ -2,24 +2,49 @@
 
 namespace Drupal\mukurtu_collection\Controller;
 
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Plugin\PluginBase;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Access\AccessResult;
+use Drupal\mukurtu_collection\CollectionOrder;
 use Drupal\views\Views;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
+/**
+ * Builds the Collections browse page.
+ */
 class MukurtuBrowseCollectionsController extends ControllerBase {
 
+  /**
+   * The search backend, either "db" or "solr".
+   *
+   * @var string
+   */
   protected $backend;
+
+  /**
+   * The module handler.
+   *
+   * @var \Drupal\Core\Extension\ModuleHandlerInterface
+   */
   protected $moduleHandler;
 
+  /**
+   * Constructs a MukurtuBrowseCollectionsController object.
+   *
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface $moduleHandler
+   *   The module handler.
+   */
   public function __construct(ModuleHandlerInterface $moduleHandler) {
     $this->backend = $this->config('mukurtu_search.settings')->get('backend') ?? 'db';
     $this->moduleHandler = $moduleHandler;
   }
 
+  /**
+   * {@inheritdoc}
+   */
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('module_handler')
@@ -27,7 +52,7 @@ class MukurtuBrowseCollectionsController extends ControllerBase {
   }
 
   /**
-   * Return the machine name of the view to use based on the search backend config.
+   * Gets the machine name of the view for the configured search backend.
    *
    * @return string
    *   The machine name of the view.
@@ -58,6 +83,12 @@ class MukurtuBrowseCollectionsController extends ControllerBase {
     return $views[$this->backend];
   }
 
+  /**
+   * Builds the Collections page.
+   *
+   * @return array
+   *   A render array.
+   */
   public function content() {
     // Render the browse view block.
     $browse_view_block = [
@@ -92,6 +123,9 @@ class MukurtuBrowseCollectionsController extends ControllerBase {
       '#theme' => 'mukurtu_collection_browse',
       '#results' => $browse_view_block,
       '#facets' => $facets,
+      '#cache' => [
+        'tags' => ['config:' . CollectionOrder::CONFIG_NAME],
+      ],
     ];
   }
 
@@ -106,23 +140,32 @@ class MukurtuBrowseCollectionsController extends ControllerBase {
    */
   public function access(AccountInterface $account) {
     // Check if the collections browse view is empty.
-    $view = Views::getView($this->getViewName());
+    $view_name = $this->getViewName();
+    $view = Views::getView($view_name);
     if (!$view) {
-      return AccessResult::forbidden();
+      return AccessResult::forbidden()->addCacheTags(["config:views.view.$view_name"]);
     }
 
     $view->setDisplay('default');
     $view->execute();
+
+    // Which collections a user can see depends on their protocols. The
+    // view's tags are invalidated when collections are saved or indexed, so a
+    // cached 403 doesn't outlast the first collection someone can see.
+    $cacheability = (new CacheableMetadata())
+      ->addCacheContexts(['user'])
+      ->addCacheTags($view->getCacheTags());
+
     if (!empty($view->result)) {
-      return AccessResult::allowed();
+      return AccessResult::allowed()->addCacheableDependency($cacheability);
     }
 
-    // Check if the user has permission to create collections.
-    if ($this->entityTypeManager()->getAccessControlHandler('node')->createAccess('collections', $account)) {
-      return AccessResult::allowed();
-    }
-    // User cannot access the route if the collections browse view result is
-    // empty and if they lack permission to create collections.
-    return AccessResult::forbidden();
+    // Users who can create collections get the page even when it's empty.
+    $create_access = $this->entityTypeManager()->getAccessControlHandler('node')->createAccess('collection', $account, [], TRUE);
+    $result = $create_access->isAllowed() ? AccessResult::allowed() : AccessResult::forbidden();
+    return $result
+      ->addCacheableDependency($cacheability)
+      ->addCacheableDependency($create_access);
   }
+
 }

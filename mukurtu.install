@@ -65,17 +65,12 @@ function mukurtu_install() {
   // Install default themes (system.theme.yml is not owned by Mukurtu).
   //
   // Gin isn't listed under this profile's `themes:` key, so it's installed
-  // here explicitly rather than by the normal install batch. Drupal's own
-  // install order for a profile's default config versus a manually-invoked
-  // theme install is not guaranteed (see install_profile_modules() in
-  // core) - if config/install/gin.settings.yml has already been written to
-  // active config by this point, installing the theme below would fatal
-  // with a PreExistingConfigException, since gin's own copy of
-  // gin.settings.yml conflicts with what's already active. Deleting any
-  // pre-existing copy first lets the theme install proceed regardless of
-  // ordering; ConfigInstaller substitutes our profile override from
-  // config/install/gin.settings.yml when it recreates the config either
-  // way, so no customization is lost.
+  // here explicitly rather than by the normal install batch. The profile's
+  // gin.settings.yml lives in config/optional so it isn't written before
+  // Gin and its schema are installed (#2386); ConfigInstaller still
+  // substitutes it for Gin's own copy when the theme installs. Deleting any
+  // pre-existing copy first still guards against a
+  // PreExistingConfigException.
   if (!\Drupal::configFactory()->get('gin.settings')->isNew()) {
     \Drupal::configFactory()->getEditable('gin.settings')->delete();
   }
@@ -349,7 +344,6 @@ function mukurtu_install() {
     // Fresh installs therefore kept getting it. See ShippedRolePermissionsTest.
     'view the administration theme',
     'view media',
-    'view all revisions',
     'view published community entities',
     'view published personal collection entities',
     'view published protocol control entities',
@@ -377,6 +371,7 @@ function mukurtu_install() {
     'administer block_content fields',
     'administer block_content form display',
     'administer blocks',
+    'administer collection order',
     'administer comment display',
     'administer comment fields',
     'administer comment form display',
@@ -545,6 +540,8 @@ function mukurtu_install() {
     'update tokens',
     'use text format full_html',
     'view all community revisions',
+    // Content revision history is for administrators and managers (#2580).
+    'view all revisions',
     'view any message template',
     'view mukurtu_batch_import_report message',
     'view mukurtu_new_user_registration message',
@@ -923,4 +920,20 @@ function mukurtu_update_40033(): string {
   }
 
   return $messages ? ucfirst(implode('; ', $messages)) . '.' : 'Display style was already present; nothing to do.';
+}
+
+/**
+ * Let logged-in users search for addresses on map fields.
+ */
+function mukurtu_update_40034(): string {
+  // Leaflet only adds the address search to the map widget for users with
+  // this permission, and no Mukurtu role shipped with it, so only
+  // administrators could search.
+  $role = Role::load('authenticated');
+  if (!$role || $role->hasPermission('access geocoder api endpoints')) {
+    return (string) t('Logged-in users can already search for addresses on map fields; nothing to change.');
+  }
+
+  $role->grantPermission('access geocoder api endpoints')->save();
+  return (string) t('Logged-in users can now search for addresses on map fields.');
 }

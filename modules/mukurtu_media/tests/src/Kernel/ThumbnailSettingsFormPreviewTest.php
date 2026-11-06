@@ -56,18 +56,6 @@ class ThumbnailSettingsFormPreviewTest extends KernelTestBase {
 
   /**
    * {@inheritdoc}
-   *
-   * mukurtu_media.schema.yml declares mukurtu_thumbnail.settings' keys under
-   * a nested 'default_thumbnail' sequence, but ThumbnailSettingsForm actually
-   * reads/writes flat, per-bundle top-level keys (see getConfigKey()) -- a
-   * pre-existing schema/implementation mismatch unrelated to the preview fix
-   * under test here. Matches Settings1761UpdateHooksTest's use of the same
-   * escape hatch for a similar reason.
-   */
-  protected $strictConfigSchema = FALSE;
-
-  /**
-   * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
@@ -144,7 +132,7 @@ class ThumbnailSettingsFormPreviewTest extends KernelTestBase {
    */
   public function testPreviewPresentWhenImageFileConfigured(): void {
     $file = $this->createImageFile('audio-default.png');
-    \Drupal::configFactory()->getEditable('mukurtu_thumbnail.settings')
+    \Drupal::configFactory()->getEditable('mukurtu_media.thumbnail_settings')
       ->set('audio_default_thumbnail', [$file->id()])
       ->save();
 
@@ -177,7 +165,7 @@ class ThumbnailSettingsFormPreviewTest extends KernelTestBase {
    */
   public function testNoPreviewForNonImageFile(): void {
     $file = $this->createNonImageFile();
-    \Drupal::configFactory()->getEditable('mukurtu_thumbnail.settings')
+    \Drupal::configFactory()->getEditable('mukurtu_media.thumbnail_settings')
       ->set('document', [$file->id()])
       ->save();
 
@@ -191,7 +179,7 @@ class ThumbnailSettingsFormPreviewTest extends KernelTestBase {
    * not resolve to an existing file entity (stale config).
    */
   public function testNoPreviewForMissingFile(): void {
-    \Drupal::configFactory()->getEditable('mukurtu_thumbnail.settings')
+    \Drupal::configFactory()->getEditable('mukurtu_media.thumbnail_settings')
       ->set('video_default_thumbnail', [99999])
       ->save();
 
@@ -207,7 +195,7 @@ class ThumbnailSettingsFormPreviewTest extends KernelTestBase {
    */
   public function testSuffixedConfigKeyUsedForVideoBundle(): void {
     $file = $this->createImageFile('video-default.png');
-    \Drupal::configFactory()->getEditable('mukurtu_thumbnail.settings')
+    \Drupal::configFactory()->getEditable('mukurtu_media.thumbnail_settings')
       ->set('video_default_thumbnail', [$file->id()])
       ->save();
 
@@ -215,7 +203,7 @@ class ThumbnailSettingsFormPreviewTest extends KernelTestBase {
 
     $this->assertArrayHasKey('preview', $form['default_thumbnail']['video']);
     $this->assertSame($file->getFileUri(), $form['default_thumbnail']['video']['preview']['#uri']);
-    $this->assertSame([$file->id()], $form['default_thumbnail']['video']['#default_value']);
+    $this->assertSame([(int) $file->id()], $form['default_thumbnail']['video']['#default_value']);
   }
 
 }

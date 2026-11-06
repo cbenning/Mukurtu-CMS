@@ -5,6 +5,10 @@
  * Install, update and uninstall functions for the Mukurtu Migrate module.
  */
 
+use Drupal\Component\Plugin\Exception\PluginException;
+use Drupal\migrate\Plugin\migrate\id_map\Sql;
+use Drupal\mukurtu_migrate\Batch\MukurtuMigrateImportBatch;
+
 /**
  * Implements hook_update_last_removed().
  *
@@ -138,4 +142,205 @@ function mukurtu_migrate_update_40205(): ?string {
   ])->save();
 
   return (string) t('Updated the mukurtu_cms_v3_users migration so a Mukurtu 3 user whose username is already taken by an account on this site is migrated under a numbered name instead of being dropped with a duplicate-username error.');
+}
+
+/**
+ * Repair migrated group memberships so their edit forms load.
+ */
+function mukurtu_migrate_update_40206(): ?string {
+  // The Mukurtu 3 membership migrations shipped with the group's bundle as
+  // the og_membership bundle. OG only provides the 'default' membership type,
+  // so OgMembershipForm fatals reading the missing type's label.
+  $migrations = [
+    'mukurtu_cms_v3_community_memberships' => 'community',
+    'mukurtu_cms_v3_language_community_community_memberships' => 'community',
+    'mukurtu_cms_v3_protocol_memberships' => 'protocol',
+    'mukurtu_cms_v3_language_community_protocol_memberships' => 'protocol',
+  ];
+  foreach ($migrations as $id => $shipped_bundle) {
+    // Leave a migration alone if a site has customized its bundle.
+    $config = \Drupal::configFactory()->getEditable('migrate_plus.migration.' . $id);
+    if (!$config->isNew() && $config->get('destination.default_bundle') === $shipped_bundle) {
+      $config->set('destination.default_bundle', 'default')->save();
+    }
+  }
+
+  $entity_type_manager = \Drupal::entityTypeManager();
+  if (!$entity_type_manager->hasDefinition('og_membership') || !\Drupal::database()->schema()->tableExists('og_membership')) {
+    return NULL;
+  }
+
+  $types = array_keys($entity_type_manager->getStorage('og_membership_type')->loadMultiple());
+  if (!in_array('default', $types, TRUE)) {
+    return NULL;
+  }
+
+  $count = (int) \Drupal::database()->update('og_membership')
+    ->fields(['type' => 'default'])
+    ->condition('type', $types, 'NOT IN')
+    ->execute();
+  if ($count === 0) {
+    return NULL;
+  }
+
+  $entity_type_manager->getStorage('og_membership')->resetCache();
+
+  return (string) t('Fixed @count migrated group memberships that used a membership type that does not exist, which made their edit forms fail.', [
+    '@count' => $count,
+  ]);
+}
+
+/**
+ * Map Mukurtu 3 community and language community visibility to valid values.
+ */
+function mukurtu_migrate_update_40207(): ?string {
+  // Both migrations could write "open" or "strict", which are protocol
+  // values, so migrated communities were hidden from everyone. Only replace
+  // the shipped values; a site that has customized them is left alone.
+  $config = \Drupal::configFactory()->getEditable('migrate_plus.migration.mukurtu_cms_v3_language_communities');
+  if (!$config->isNew() && $config->get('process.field_access_mode') === [
+    [
+      'plugin' => 'static_map',
+      'map' => [0 => 'open', 2 => 'strict'],
+      'default_value' => 'open',
+    ],
+  ]) {
+    $config->set('process.field_access_mode', [
+      'plugin' => 'default_value',
+      'default_value' => 'community-only',
+    ])->save();
+  }
+
+  $config = \Drupal::configFactory()->getEditable('migrate_plus.migration.mukurtu_cms_v3_communities');
+  if (!$config->isNew() && $config->get('process.field_access_mode.0.default_value') === 'strict') {
+    $config->set('process.field_access_mode.0.default_value', 'community-only')->save();
+  }
+
+  return NULL;
+}
+
+/**
+ * Give Mukurtu 3 language stewards the Community Manager role in their migrated language communities.
+ */
+function mukurtu_migrate_update_40208(): ?string {
+  // In Mukurtu 3, "language steward" administers a language community, and
+  // "administrator member" has no permissions. The migration only mapped
+  // "administrator member", so stewards arrived as plain community members
+  // and couldn't manage the community or its protocol. Only replace the
+  // shipped mapping; a site that has customized it is left alone.
+  $config = \Drupal::configFactory()->getEditable('migrate_plus.migration.mukurtu_cms_v3_language_community_community_memberships');
+  if (!$config->isNew() && $config->get('process.roles') === [
+    [
+      'plugin' => 'static_map',
+      'source' => 'roles',
+      'map' => ['administrator member' => 'community-community-community_manager'],
+      'default_value' => 'community-community-member',
+    ],
+  ]) {
+    $config->set('process.roles', [
+      [
+        'plugin' => 'static_map',
+        'source' => 'roles',
+        'map' => [
+          'administrator member' => 'community-community-community_manager',
+          'language steward' => 'community-community-community_manager',
+        ],
+        'default_value' => 'community-community-member',
+      ],
+      ['plugin' => 'array_unique'],
+    ])->save();
+  }
+
+  // Repair language communities that were already migrated. Each one is
+  // paired with the protocol migrated from the same Mukurtu 3 node.
+  $database = \Drupal::database();
+  $schema = $database->schema();
+  $entity_type_manager = \Drupal::entityTypeManager();
+  if (!$entity_type_manager->hasDefinition('og_membership') || !$schema->tableExists('og_membership')) {
+    return NULL;
+  }
+
+  // Core shortens long map table names on prefixed databases, so ask each
+  // migration's id map for its table instead of building the name. Loading
+  // a migration discovers every migration on the site, so one broken
+  // migration elsewhere would throw; fall back to core's default name then.
+  $migration_manager = \Drupal::service('plugin.manager.migration');
+  $map_tables = [];
+  foreach (['mukurtu_cms_v3_language_communities', 'mukurtu_cms_v3_language_community_protocols'] as $id) {
+    try {
+      if (!$migration_manager->hasDefinition($id)) {
+        return NULL;
+      }
+      $id_map = $migration_manager->createInstance($id)->getIdMap();
+      $map_table = $id_map instanceof Sql ? $id_map->mapTableName() : NULL;
+    }
+    catch (PluginException) {
+      $map_table = mb_substr('migrate_map_' . $id, 0, 63 - strlen($database->getPrefix()));
+    }
+    if (!$map_table || !$schema->tableExists($map_table)) {
+      return NULL;
+    }
+    $map_tables[] = $map_table;
+  }
+
+  $manager_role = $entity_type_manager->getStorage('og_role')->load('community-community-community_manager');
+  if (!$manager_role) {
+    return NULL;
+  }
+
+  $query = $database->select($map_tables[0], 'c');
+  $query->innerJoin($map_tables[1], 'p', '[p].[sourceid1] = [c].[sourceid1]');
+  $query->addField('p', 'destid1', 'protocol_id');
+  $query->addField('c', 'destid1', 'community_id');
+  $query->isNotNull('c.destid1');
+  $query->isNotNull('p.destid1');
+  $communities_by_protocol = $query->execute()->fetchAllKeyed();
+  if (!$communities_by_protocol) {
+    return NULL;
+  }
+
+  $storage = $entity_type_manager->getStorage('og_membership');
+  $steward_ids = $storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('entity_type', 'protocol')
+    ->condition('entity_id', array_keys($communities_by_protocol), 'IN')
+    ->condition('roles', 'protocol-protocol-language_steward')
+    ->execute();
+
+  $count = 0;
+  foreach ($storage->loadMultiple($steward_ids) as $steward) {
+    // Stewards removed from the community since the migration stay removed.
+    $community_ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('entity_type', 'community')
+      ->condition('entity_id', $communities_by_protocol[$steward->getGroupId()])
+      ->condition('uid', $steward->getOwnerId())
+      ->execute();
+    foreach ($storage->loadMultiple($community_ids) as $membership) {
+      if (!$membership->hasRole($manager_role->id())) {
+        $membership->addRole($manager_role)->save();
+        $count++;
+      }
+    }
+  }
+  if ($count === 0) {
+    return NULL;
+  }
+
+  return (string) t('Gave the Community Manager role to @count Mukurtu 3 language stewards in their migrated language communities, so they can manage the community and its protocol.', [
+    '@count' => $count,
+  ]);
+}
+
+/**
+ * Remove the saved Mukurtu 3 database credentials.
+ */
+function mukurtu_migrate_update_40209(): ?string {
+  // The credential step saved the source database credentials, including the
+  // password, to state, and nothing removed them after the migration.
+  if (!MukurtuMigrateImportBatch::deleteSourceCredentials()) {
+    return NULL;
+  }
+
+  return (string) t('Removed the saved Mukurtu CMS v3 database credentials, which were no longer needed after the migration.');
 }
